@@ -1,0 +1,130 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Data Inventory Viewer</title>
+    <style>
+        body { font-family: system-ui, -apple-system, sans-serif; max-width: 800px; margin: 40px auto; padding: 20px; background: #f4f6f8; color: #333; }
+        .card { background: white; padding: 30px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+        h2 { margin-top: 0; color: #111; }
+        .controls { display: flex; gap: 10px; margin-bottom: 20px; }
+        input { flex: 1; padding: 10px; border: 1px solid #ccc; border-radius: 4px; font-size: 14px; }
+        button { background: #059669; color: white; border: none; padding: 10px 20px; border-radius: 4px; font-size: 14px; cursor: pointer; font-weight: 600; }
+        button:hover { background: #047857; }
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e5e7eb; font-size: 14px; }
+        th { background: #f9fafb; font-weight: 600; }
+        #status { margin-top: 15px; padding: 10px; border-radius: 4px; text-align: center; font-weight: 500; display: none; }
+        .error { background: #fee2e2; color: #991b1b; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>Inventory Viewer (Read-Only)</h2>
+    <div class="controls">
+        <input type="password" id="githubToken" placeholder="Enter GitHub Token (Read Access)">
+        <button onclick="loadData()">Load Submissions</button>
+    </div>
+    <div id="status"></div>
+    <div style="overflow-x: auto;">
+        <table id="dataTable" style="display: none;">
+            <thead>
+                <tr>
+                    <th>Timestamp</th>
+                    <th>Item Name</th>
+                    <th>Category</th>
+                    <th>Notes</th>
+                </tr>
+            </thead>
+            <tbody id="tableBody">
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+const REPO_OWNER = "Projection-Solutions";
+const REPO_NAME = "data";
+const FILE_PATH = "data.json";
+
+// Remember token in session storage
+document.getElementById('githubToken').value = sessionStorage.getItem('gh_view_token') || '';
+document.getElementById('githubToken').addEventListener('input', (e) => {
+    sessionStorage.setItem('gh_view_token', e.target.value);
+});
+
+async function loadData() {
+    const token = document.getElementById('githubToken').value.trim();
+    const statusDiv = document.getElementById('status');
+    const dataTable = document.getElementById('dataTable');
+    const tableBody = document.getElementById('tableBody');
+
+    if (!token) {
+        statusDiv.style.display = 'block';
+        statusDiv.className = 'error';
+        statusDiv.textContent = 'Please provide a GitHub token to view the private repository.';
+        return;
+    }
+
+    statusDiv.style.display = 'block';
+    statusDiv.className = '';
+    statusDiv.textContent = 'Fetching data...';
+
+    const apiURL = `https://api.github.com/repos/${REPO_OWNER}/${REPO_NAME}/contents/${FILE_PATH}`;
+    const headers = {
+        "Authorization": `Bearer ${token}`,
+        "Accept": "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28"
+    };
+
+    try {
+        const res = await fetch(apiURL, { headers });
+        if (!res.ok) {
+            throw new Error(`Failed to load data (Status: ${res.status}). Check your token permissions.`);
+        }
+
+        const fileData = await res.json();
+        const decodedJson = decodeURIComponent(escape(atob(fileData.content)));
+        const items = JSON.parse(decodedJson);
+
+        tableBody.innerHTML = '';
+        if (items.length === 0) {
+            statusDiv.textContent = 'No submissions found in data.json yet.';
+            dataTable.style.display = 'none';
+            return;
+        }
+
+        // Sort newest first
+        items.sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+
+        items.forEach(item => {
+            const row = document.createElement('tr');
+            const dateStr = new Date(item.timestamp).toLocaleString();
+            row.innerHTML = `
+                <td>${dateStr}</td>
+                <td><strong>${escapeHtml(item.name)}</strong></td>
+                <td>${escapeHtml(item.category)}</td>
+                <td>${escapeHtml(item.notes || '')}</td>
+            `;
+            tableBody.appendChild(row);
+        });
+
+        statusDiv.style.display = 'none';
+        dataTable.style.display = 'table';
+
+    } catch (err) {
+        statusDiv.className = 'error';
+        statusDiv.textContent = `Error: ${err.message}`;
+        dataTable.style.display = 'none';
+    }
+}
+
+function escapeHtml(str) {
+    return str.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#039;");
+}
+</script>
+
+</body>
+</html>
